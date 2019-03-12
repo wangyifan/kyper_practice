@@ -7,11 +7,11 @@ import (
 	"go.dedis.ch/kyber/pairing/bn256"
 	share "go.dedis.ch/kyber/share"
 	bls "go.dedis.ch/kyber/sign/bls"
-	//tbls "go.dedis.ch/kyber/sign/tbls"
+	tbls "go.dedis.ch/kyber/sign/tbls"
 )
 
 func main() {
-	msg := []byte("Hello threshold Boneh-Lynn-Shacham")
+	msg := []byte("Hello threshold Boneh-Lynn-Shacham yIFAN")
 	suite := bn256.NewSuite()
 	// This is a 3/5 threshold BLS
 	n := 5
@@ -82,32 +82,25 @@ func main() {
 		)
 	}
 
-	// generate the aggregated sig
-	msgSigs := make([][]byte, n)
-	for i := 0; i < n; i++ {
-		msgSig, err := bls.Sign(suite, dkgShares[i].V, msg)
-		if err == nil {
-			errv := bls.Verify(suite, dkgPubShares[i].V, msg, msgSig)
-			if errv != nil {
-				fmt.Printf("errv failed %v\n", errv)
-			}
-			msgSigs[i] = msgSig
+	// now we have dkg pub & pri shares
+	// lets get sig shares
+	sigShares := make([][]byte, n)
+	for i, x := range dkgShares {
+		if sig, err := tbls.Sign(suite, x, msg); err == nil {
+			sigShares[i] = sig
 		} else {
-			fmt.Printf("bls sign failed %d\n", i)
+			fmt.Printf("dkg sig failed, %v\n", err)
 		}
 	}
-	allSig, err := bls.AggregateSignatures(suite, msgSigs...)
+
+	// now we have everything: pri, pub and sig shares
+	// we can recover the aggregated share and verify
+	allSig, err := tbls.Recover(suite, pubPolyAll, msg, sigShares, t, n)
+	fmt.Printf("%v, %v\n", allSig[:32], err)
+	err = bls.Verify(suite, pubPolyAll.Commit(), msg, allSig)
 	if err != nil {
-		fmt.Printf("agg sig failed\n")
+		fmt.Printf("allsig verify failed, %v\n", err)
 	} else {
-		fmt.Printf("allsig %v\n", allSig[:32])
+		fmt.Printf("yeah!!!! %v\n", err)
 	}
-
-	//dkgPubShares
-	// and it should verify with the pub key of combined pub poly
-	if err := bls.Verify(suite, pubPolyAll.Commit(), msg, allSig); err != nil {
-		fmt.Printf("%v\n", pubPolyAll.Commit())
-		fmt.Printf("allsig verify failed %v", err)
-	}
-
 }
