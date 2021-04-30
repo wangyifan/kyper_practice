@@ -14,19 +14,19 @@ import (
 	eddsa "go.dedis.ch/kyber/sign/eddsa"
 	tbls "go.dedis.ch/kyber/sign/tbls"
 	random "go.dedis.ch/kyber/util/random"
-	"reflect"
+	//"reflect"
 )
 
 func bls_test1() {
-	msg := []byte("Hello threshold Boneh-Lynn-Shacham yIFAN")
+	msg := []byte("Hello World")
 	suite := bn256.NewSuite()
-	// This is a 3/5 threshold BLS
-	n := 5
-	t := n/2 + 1
+	// This is a T out of N threshold BLS
+	n := 3
+	t := 3
 	fmt.Printf("n = %v, t = %v\n\n", n, t)
 	// we need 5 secrets
-	var secrets [5]kyber.Scalar
-	for i := 0; i < 5; i++ {
+	secrets := make([]kyber.Scalar, n)
+	for i := 0; i < n; i++ {
 		// randomness for secret, we just need a scalar here, so it
 		// does not matter using g1 or g2
 		secrets[i] = suite.G1().Scalar().Pick(suite.RandomStream())
@@ -37,7 +37,7 @@ func bls_test1() {
 	priShares := make([][]*share.PriShare, n)
 	pubShares := make([][]*share.PubShare, n)
 
-	// create 5 pri and pub polys from its secret
+	// # 1 create 3 pri and pub polys from its secret
 	for index, secret := range secrets {
 		priPoly := share.NewPriPoly(
 			suite.G2(),
@@ -45,6 +45,12 @@ func bls_test1() {
 			secret,
 			suite.RandomStream(),
 		)
+
+		fmt.Printf("Polynomial #%d:\n", index+1)
+		for i, coeff := range priPoly.Coefficients() {
+			fmt.Printf("a%d = %v\n", i, coeff)
+		}
+		fmt.Printf("\n")
 
 		pubPoly := priPoly.Commit(
 			suite.G2().Point().Base(),
@@ -55,42 +61,41 @@ func bls_test1() {
 		pubShares[index] = pubPoly.Shares(n)
 	}
 
-	for _, pubshares := range pubShares {
-		for _, pubshare := range pubshares {
-			b, _ := pubshare.V.MarshalBinary()
-			//fmt.Printf("pubshare.V.MarshalBinary: %s, %s, %s, %s\n", hex.EncodeToString(b[:32]), hex.EncodeToString(b[32:64]), hex.EncodeToString(b[64:96]), hex.EncodeToString(b[96:]))
-			V := suite.G2().Point()
-			//fmt.Printf("%d, %d, %d, %d\n", V.ElementSize(), V.MarshalSize())
-			V.UnmarshalBinary(b)
-			//fmt.Printf("share.V & V: %t, %v, %v\n", pubshare.V.Equal(V), pubshare.V, V)
-			pubshare.V = V
+	// # 2 print all 3x3=9 private shares
+	for i, shares := range priShares {
+		fmt.Printf("Private Share #%d:\n", i+1)
+		for _, share := range shares {
+			fmt.Printf("Private[%d,%d]: %v\n", i+1, share.I+1, share.V)
 		}
+		fmt.Printf("\n")
 	}
 
-	for i, pubshares := range pubShares {
-		pubpoly, _ := share.RecoverPubPoly(
-			suite.G2(),
-			pubshares,
-			t,
-			n,
-		)
-		v1, v2 := pubPolyList[i].Info()
-		v3, v4 := pubpoly.Info()
-		fmt.Printf("pubpoly before: %v\n%v\n", v1, v2)
-		fmt.Printf("pubpoly rebuild: %v\n%v\n", v3, v4)
+	fmt.Printf("\n")
+
+	// # 3 print all 3x3 public shares
+	for i, shares := range pubShares {
+		fmt.Printf("Public Share #%d:\n", i+1)
+		for _, share := range shares {
+			fmt.Printf("Public[%d,%d]: %v\n", i+1, share.I+1, share.V)
+		}
+		fmt.Printf("\n")
 	}
 
-	// this is the recovered private share for the combine private poly for each node
+	fmt.Printf("\n\n")
+
+	// # 4 combined private share for each node
 	dkgShares := make([]*share.PriShare, n)
 	for i := 0; i < n; i++ {
 		acc := suite.G2().Scalar().Zero()
-		fmt.Printf("acc %d\n", acc)
+		fmt.Printf("Local Private Key #%d: ", i+1)
 		for j := 0; j < n; j++ { // assuming all participants are in the qualified set
 			acc = suite.G2().Scalar().Add(acc, priShares[j][i].V)
-			fmt.Printf("acc %d\n", acc)
 		}
 		dkgShares[i] = &share.PriShare{i, acc}
+		fmt.Printf("%v\n", dkgShares[i].V)
 	}
+
+	fmt.Printf("\n")
 
 	// first recover the combined pub poly and then calculate
 	// pub share for the combined pub poly for each node
@@ -103,70 +108,103 @@ func bls_test1() {
 	}
 	// calculate pub share for each node
 	for i := 0; i < n; i++ {
+		fmt.Printf("Local Public Key #%d: ", i+1)
 		dkgPubShares[i] = pubPolyAll.Eval(i)
-		fmt.Printf("pubshare eval i=%d, v=%v\n", i, dkgPubShares[i].V)
+		fmt.Printf("%v\n", dkgPubShares[i].V)
 	}
 
-	// verify public key and private key matches
-	for i := 0; i < n; i++ {
-		fmt.Printf(
-			"pubkey prikey %v\n%v\n\n",
-			suite.G2().Point().Mul(dkgShares[i].V, nil),
-			dkgPubShares[i].V,
-		)
-	}
+	fmt.Printf("\n---------------------------------------------------------\n")
+	fmt.Printf("\n---------------------------------------------------------\n")
 
-	// now we have dkg pub & pri shares
-	// lets get sig shares
+	// # 5 signature share
 	sigShares := make([][]byte, n)
-	for i, x := range dkgShares {
-		if sig, err := tbls.Sign(suite, x, msg); err == nil {
+	for i, pri := range dkgShares {
+		if sig, err := tbls.Sign(suite, pri, msg); err == nil {
 			sigShares[i] = sig
+			fmt.Printf("Signature Share #%d: %x\n", i+1, sig)
 		} else {
 			fmt.Printf("dkg sig failed, %v\n", err)
 		}
 	}
+	fmt.Printf("\n")
+	fmt.Printf("Group Public Key: %v", pubPolyAll.Commit())
+	fmt.Printf("\n")
+	allSig, _ := tbls.Recover(suite, pubPolyAll, msg, sigShares, t, n)
+	fmt.Printf("\n")
+	fmt.Printf("Group Signature 1: %x\n", allSig)
+	fmt.Printf("\n")
+	err := bls.Verify(suite, pubPolyAll.Commit(), msg, allSig)
+	fmt.Printf("Group Signature verify err: %v\n", err)
+	fmt.Printf("\n")
+	groupPrivateKey, _ := share.RecoverSecret(suite.G2(), dkgShares, t, n)
+	fmt.Printf("Group Private key: %v\n", groupPrivateKey)
+	fmt.Printf("\n")
+	_allSig, _ := bls.Sign(suite, groupPrivateKey, msg)
+	fmt.Printf("Group Signature 2: %x\n", _allSig)
+	fmt.Printf("\n")
+	/*
+		// verify public key and private key matches
+		for i := 0; i < n; i++ {
+			fmt.Printf(
+				"pubkey prikey %v\n%v\n\n",
+				suite.G2().Point().Mul(dkgShares[i].V, nil),
+				dkgPubShares[i].V,
+			)
+		}*/
 
-	// now we have everything: pri, pub and sig shares
-	// we can recover the aggregated share and verify
-	allSig, err := tbls.Recover(suite, pubPolyAll, msg, sigShares, t, n)
-	fmt.Printf("%v, %v\n", allSig, err)
-	err = bls.Verify(suite, pubPolyAll.Commit(), msg, allSig)
-	if err != nil {
-		fmt.Printf("allsig verify failed, %v\n", err)
-	} else {
-		fmt.Printf("yeah!!!! %v\n", err)
-	}
-
-	// check if we can recover private ploy from t prishares
-	for i := 0; i < n; i++ {
-		priSharesSlice := priShares[i][:t]
-		recoveredPriPoly, _ := share.RecoverPriPoly(suite.G2(), priSharesSlice, t, t)
-
-		for j := 0; j < n; j++ {
-			_s := recoveredPriPoly.Eval(priShares[i][j].I)
-			if !reflect.DeepEqual(_s, priShares[i][j]) {
-				fmt.Printf("not equal at t\n%v\n%v\n", _s, priShares[i][j])
+	/*
+		// now we have dkg pub & pri shares
+		// lets get sig shares
+		sigShares := make([][]byte, n)
+		for i, x := range dkgShares {
+			if sig, err := tbls.Sign(suite, x, msg); err == nil {
+				sigShares[i] = sig
 			} else {
-				fmt.Printf("equal\n")
+				fmt.Printf("dkg sig failed, %v\n", err)
 			}
 		}
-	}
 
-	fmt.Println("\n\n========================================================\n\n")
+		// now we have everything: pri, pub and sig shares
+		// we can recover the aggregated share and verify
+		allSig, err := tbls.Recover(suite, pubPolyAll, msg, sigShares, t, n)
+		fmt.Printf("%v, %v\n", allSig, err)
+		err = bls.Verify(suite, pubPolyAll.Commit(), msg, allSig)
+		if err != nil {
+			fmt.Printf("allsig verify failed, %v\n", err)
+		} else {
+			fmt.Printf("yeah!!!! %v\n", err)
+		}
 
-	for i := 0; i < 100; i++ {
-		suite25519 := ed25519.NewBlakeSHA256Ed25519()
-		private := suite25519.Scalar().Pick(random.New())
-		public := suite25519.Point().Mul(private, nil)
-		var buffer1 bytes.Buffer
-		private.MarshalTo(&buffer1)
-		privateBytes := buffer1.Bytes()
-		var buffer2 bytes.Buffer
-		public.MarshalTo(&buffer2)
-		publicBytes := buffer2.Bytes()
-		fmt.Printf("public[%d]: %v, %v, private[%d]: %v, %v\n", len(publicBytes), publicBytes, public, len(privateBytes), privateBytes, private)
-	}
+		// check if we can recover private ploy from t prishares
+		for i := 0; i < n; i++ {
+			priSharesSlice := priShares[i][:t]
+			recoveredPriPoly, _ := share.RecoverPriPoly(suite.G2(), priSharesSlice, t, t)
+
+			for j := 0; j < n; j++ {
+				_s := recoveredPriPoly.Eval(priShares[i][j].I)
+				if !reflect.DeepEqual(_s, priShares[i][j]) {
+					fmt.Printf("not equal at t\n%v\n%v\n", _s, priShares[i][j])
+				} else {
+					fmt.Printf("equal\n")
+				}
+			}
+		}
+
+		fmt.Println("\n\n========================================================\n\n")
+
+		for i := 0; i < 100; i++ {
+			suite25519 := ed25519.NewBlakeSHA256Ed25519()
+			private := suite25519.Scalar().Pick(random.New())
+			public := suite25519.Point().Mul(private, nil)
+			var buffer1 bytes.Buffer
+			private.MarshalTo(&buffer1)
+			privateBytes := buffer1.Bytes()
+			var buffer2 bytes.Buffer
+			public.MarshalTo(&buffer2)
+			publicBytes := buffer2.Bytes()
+			fmt.Printf("public[%d]: %v, %v, private[%d]: %v, %v\n", len(publicBytes), publicBytes, public, len(privateBytes), privateBytes, private)
+		}
+	*/
 }
 
 func bls_test2() {
@@ -288,9 +326,9 @@ func shamir() {
 }
 
 func main() {
-	//bls_test1()
+	bls_test1()
 	//bls_test2()
 	//ed25519_test1()
 	//ed25519_test2()
-	shamir()
+	//shamir()
 }
