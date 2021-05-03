@@ -1,19 +1,15 @@
 package main
 
 import (
-	"bytes"
 	"crypto/cipher"
 	"fmt"
 
-	kyber "go.dedis.ch/kyber"
-	ecies "go.dedis.ch/kyber/encrypt/ecies"
-	ed25519 "go.dedis.ch/kyber/group/edwards25519"
-	"go.dedis.ch/kyber/pairing/bn256"
-	share "go.dedis.ch/kyber/share"
-	bls "go.dedis.ch/kyber/sign/bls"
-	eddsa "go.dedis.ch/kyber/sign/eddsa"
-	tbls "go.dedis.ch/kyber/sign/tbls"
-	random "go.dedis.ch/kyber/util/random"
+	kyber "go.dedis.ch/kyber/v3"
+	"go.dedis.ch/kyber/v3/pairing/bn256"
+	share "go.dedis.ch/kyber/v3/share"
+	bls "go.dedis.ch/kyber/v3/sign/bls"
+	tbls "go.dedis.ch/kyber/v3/sign/tbls"
+	random "go.dedis.ch/kyber/v3/util/random"
 )
 
 func bls_test1() {
@@ -248,86 +244,6 @@ func (cs *constantStream) XORKeyStream(dst, src []byte) {
 	copy(dst, cs.seed)
 }
 
-func ed25519_test1() {
-	suite := ed25519.NewBlakeSHA256Ed25519()
-	message := []byte("hello, world")
-
-	// get a edDSA instance
-	private := suite.Scalar().Pick(random.New())
-	var buf bytes.Buffer
-	private.MarshalTo(&buf)
-	stream := ConstantStream(buf.Bytes())
-	edDSA := eddsa.NewEdDSA(stream)
-
-	if sig, err := edDSA.Sign(message); err != nil {
-		fmt.Printf("err: %v", err)
-	} else {
-		if err := eddsa.Verify(edDSA.Public, message, sig); err != nil {
-			fmt.Printf("err: %v", err)
-		} else {
-			fmt.Printf("Yes!\n")
-		}
-	}
-}
-
-func ed25519_test2() {
-	suite := ed25519.NewBlakeSHA256Ed25519()
-	message := []byte("hello, world")
-
-	// get a edDSA instance
-	private := suite.Scalar().Pick(random.New())
-	var buf bytes.Buffer
-	private.MarshalTo(&buf)
-	stream := ConstantStream(buf.Bytes())
-	edDSA := eddsa.NewEdDSA(stream)
-
-	encrypted, _ := ecies.Encrypt(suite, edDSA.Public, message, suite.Hash)
-	fmt.Printf("Encrypted: %x\n", encrypted)
-	decrypted, _ := ecies.Decrypt(suite, edDSA.Secret, encrypted, suite.Hash)
-	fmt.Printf("Original: %s\n", decrypted)
-}
-
-func shamir() {
-	// use ecc curve edwards25519
-	g := ed25519.NewBlakeSHA256Ed25519()
-
-	// 5/5 (full) threshold
-	n := 5
-	t := n
-
-	// poly is the polynomial we will generate locally
-	poly := share.NewPriPoly(g, t, nil, g.RandomStream())
-	fmt.Printf("Coefficient are:\n")
-	coefficients := poly.Coefficients()
-	for i, coeff := range coefficients {
-		fmt.Printf("(%d/%d) %v", i, len(coefficients), coeff)
-		if i == 0 {
-			fmt.Printf(" (private key seed)\n")
-		} else {
-			fmt.Printf("\n")
-		}
-	}
-
-	// get n points from the polynominal
-	points := poly.Shares(n)
-	fmt.Printf("\n")
-	fmt.Printf("Points are:\n")
-	for i, p := range points {
-		fmt.Printf("(%d/%d) x=%d, y=%v\n", i, len(points), p.I+1, p.V)
-	}
-
-	// recovered private key seed
-	recovered, _ := share.RecoverSecret(g, points, t, n)
-	fmt.Printf("\n")
-	fmt.Printf("The following two should be the same:\n")
-	fmt.Printf("Recovered private key seed: %v\n", recovered)
-	fmt.Printf("Private key from polynomial: %v\n", poly.Secret())
-}
-
 func main() {
 	bls_test1()
-	//bls_test2()
-	//ed25519_test1()
-	//ed25519_test2()
-	//shamir()
 }
