@@ -3,8 +3,8 @@ package main
 import (
 	"fmt"
 
-	ed25519 "go.dedis.ch/kyber/group/edwards25519"
-	share "go.dedis.ch/kyber/share"
+	ed25519 "go.dedis.ch/kyber/v3/group/edwards25519"
+	share "go.dedis.ch/kyber/v3/share"
 )
 
 func shamir() {

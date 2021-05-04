@@ -5,16 +5,22 @@ import (
 	"fmt"
 
 	kyber "go.dedis.ch/kyber/v3"
-	"go.dedis.ch/kyber/v3/pairing/bn256"
+	kyber12381 "go.dedis.ch/kyber/v3/pairing/bls12381"
+	//bn256 "go.dedis.ch/kyber/v3/pairing/bn256"
 	share "go.dedis.ch/kyber/v3/share"
 	bls "go.dedis.ch/kyber/v3/sign/bls"
 	tbls "go.dedis.ch/kyber/v3/sign/tbls"
 	random "go.dedis.ch/kyber/v3/util/random"
+
+	kilic12381 "github.com/kilic/bls12-381"
+
+	geth12381 "github.com/ethereum/go-ethereum/crypto/bls12381"
 )
 
 func bls_test1() {
 	msg := []byte("Hello World")
-	suite := bn256.NewSuite()
+	//suite := bn256.NewSuite()
+	suite := kyber12381.NewSuite()
 	// This is a T out of N threshold BLS
 	n := 3
 	t := 3
@@ -137,74 +143,12 @@ func bls_test1() {
 	_allSig, _ := bls.Sign(suite, groupPrivateKey, msg)
 	fmt.Printf("Group Signature 2: %x\n", _allSig)
 	fmt.Printf("\n")
-	/*
-		// verify public key and private key matches
-		for i := 0; i < n; i++ {
-			fmt.Printf(
-				"pubkey prikey %v\n%v\n\n",
-				suite.G2().Point().Mul(dkgShares[i].V, nil),
-				dkgPubShares[i].V,
-			)
-		}*/
-
-	/*
-		// now we have dkg pub & pri shares
-		// lets get sig shares
-		sigShares := make([][]byte, n)
-		for i, x := range dkgShares {
-			if sig, err := tbls.Sign(suite, x, msg); err == nil {
-				sigShares[i] = sig
-			} else {
-				fmt.Printf("dkg sig failed, %v\n", err)
-			}
-		}
-
-		// now we have everything: pri, pub and sig shares
-		// we can recover the aggregated share and verify
-		allSig, err := tbls.Recover(suite, pubPolyAll, msg, sigShares, t, n)
-		fmt.Printf("%v, %v\n", allSig, err)
-		err = bls.Verify(suite, pubPolyAll.Commit(), msg, allSig)
-		if err != nil {
-			fmt.Printf("allsig verify failed, %v\n", err)
-		} else {
-			fmt.Printf("yeah!!!! %v\n", err)
-		}
-
-		// check if we can recover private ploy from t prishares
-		for i := 0; i < n; i++ {
-			priSharesSlice := priShares[i][:t]
-			recoveredPriPoly, _ := share.RecoverPriPoly(suite.G2(), priSharesSlice, t, t)
-
-			for j := 0; j < n; j++ {
-				_s := recoveredPriPoly.Eval(priShares[i][j].I)
-				if !reflect.DeepEqual(_s, priShares[i][j]) {
-					fmt.Printf("not equal at t\n%v\n%v\n", _s, priShares[i][j])
-				} else {
-					fmt.Printf("equal\n")
-				}
-			}
-		}
-
-		fmt.Println("\n\n========================================================\n\n")
-
-		for i := 0; i < 100; i++ {
-			suite25519 := ed25519.NewBlakeSHA256Ed25519()
-			private := suite25519.Scalar().Pick(random.New())
-			public := suite25519.Point().Mul(private, nil)
-			var buffer1 bytes.Buffer
-			private.MarshalTo(&buffer1)
-			privateBytes := buffer1.Bytes()
-			var buffer2 bytes.Buffer
-			public.MarshalTo(&buffer2)
-			publicBytes := buffer2.Bytes()
-			fmt.Printf("public[%d]: %v, %v, private[%d]: %v, %v\n", len(publicBytes), publicBytes, public, len(privateBytes), privateBytes, private)
-		}
-	*/
 }
 
 func bls_test2() {
 	msg := []byte("Hello Boneh-Lynn-Shacham")
-	suite := bn256.NewSuite()
+	//suite := bn256.NewSuite()
+	suite := kyber12381.NewSuite()
 	private, public := bls.NewKeyPair(suite, random.New())
 	sig, _ := bls.Sign(suite, private, msg)
 	err := bls.Verify(suite, public, msg, sig)
@@ -222,6 +166,75 @@ func bls_test2() {
 	sig3, err := bls.Sign(suite, private3, msg)
 	aggregatedSig, err := bls.AggregateSignatures(suite, sig1, sig3, sig2)
 	aggregatedKey := bls.AggregatePublicKeys(suite, public1, public2, public3)
+	fmt.Printf("sig(%d): %x\n", len(aggregatedSig), aggregatedSig)
+	_key, _ := aggregatedKey.MarshalBinary()
+	fmt.Printf("pub key (%d): %x\n", len(_key), _key)
+	fmt.Println()
+
+	g1 := kilic12381.NewG1()
+	recoveredSig, _ := g1.FromCompressed(aggregatedSig)
+	fmt.Printf("recovered sig: %v\n", recoveredSig)
+	s_sig := g1.ToUncompressed(recoveredSig)
+	fmt.Printf("s_sig(%d): %x\n", len(s_sig), s_sig)
+	b1 := make([]byte, 128)
+	copy(b1[16:64], s_sig[:48])
+	copy(b1[80:128], s_sig[48:96])
+	fmt.Println()
+
+	g2 := kilic12381.NewG2()
+	recoveredPub, _ := g2.FromCompressed(_key)
+	fmt.Printf("recovered pub: %v\n", recoveredPub)
+	s_pub := g2.ToUncompressed(recoveredPub)
+	fmt.Printf("s_pub(%d): %x\n", len(s_pub), s_pub)
+	b2 := make([]byte, 256)
+	copy(b2[16:64], s_pub[:48])
+	copy(b2[80:128], s_pub[48:96])
+	copy(b2[144:192], s_pub[96:144])
+	copy(b2[208:256], s_pub[144:192])
+	fmt.Println()
+
+	g2Base := g2.One()
+	fmt.Printf("g2(%d) base: %x\n", len(g2.ToUncompressed(g2Base)), g2.ToUncompressed(g2Base))
+	fmt.Println()
+
+	var Domain = []byte("BLS_SIG_BLS12381G2_XMD:SHA-256_SSWU_RO_NUL_")
+	HM, _ := kilic12381.NewG1().HashToCurve(msg, Domain)
+	fmt.Printf("HM(%d): %x\n", len(g1.ToUncompressed(HM)), g1.ToUncompressed(HM))
+	fmt.Println()
+
+	b3 := make([]byte, 384)
+	copy(b3[:128], b1[:])
+	copy(b3[128:], b2[:])
+	fmt.Printf("b3(%d): %x\n", len(b3), b3)
+	fmt.Println()
+
+	e := geth12381.NewPairingEngine()
+	gg1, gg2 := e.G1, e.G2
+
+	pp2, err := gg2.FromBytes(s_pub)
+	if err != nil {
+		fmt.Printf("pp2 err %v, %v\n", pp2, err)
+	} else {
+		fmt.Printf("pp2 no err %v, %v\n", pp2, err)
+	}
+	fmt.Println()
+
+	t0, t1, t2 := 0, 128, 384
+	p1, err := gg1.DecodePoint(b3[t0:t1])
+	fmt.Printf("err 1: %v, %x\n", err, b3[t0:t1])
+
+	_, err = gg2.DecodePoint(b3[t1:t2])
+	fmt.Printf("err 2: %v, %x\n", err, b3[t1:t2])
+
+	if !gg1.InCorrectSubgroup(p1) {
+		fmt.Printf("error p1\n")
+	}
+	if !gg2.InCorrectSubgroup(pp2) {
+		fmt.Printf("error p2\n")
+	}
+	e.AddPair(p1, pp2)
+	result := e.Check()
+	fmt.Printf("e.check: %t\n", result)
 
 	err = bls.Verify(suite, aggregatedKey, msg, aggregatedSig)
 	if err != nil {
@@ -245,5 +258,6 @@ func (cs *constantStream) XORKeyStream(dst, src []byte) {
 }
 
 func main() {
-	bls_test1()
+	//bls_test1()
+	bls_test2()
 }

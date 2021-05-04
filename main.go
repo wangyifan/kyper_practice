@@ -5,15 +5,15 @@ import (
 	"crypto/cipher"
 	"fmt"
 
-	kyber "go.dedis.ch/kyber"
-	ecies "go.dedis.ch/kyber/encrypt/ecies"
-	ed25519 "go.dedis.ch/kyber/group/edwards25519"
-	"go.dedis.ch/kyber/pairing/bn256"
-	share "go.dedis.ch/kyber/share"
-	bls "go.dedis.ch/kyber/sign/bls"
-	eddsa "go.dedis.ch/kyber/sign/eddsa"
-	tbls "go.dedis.ch/kyber/sign/tbls"
-	random "go.dedis.ch/kyber/util/random"
+	kyber "go.dedis.ch/kyber/v3"
+	ecies "go.dedis.ch/kyber/v3/encrypt/ecies"
+	ed25519 "go.dedis.ch/kyber/v3/group/edwards25519"
+	"go.dedis.ch/kyber/v3/pairing/bn256"
+	share "go.dedis.ch/kyber/v3/share"
+	bls "go.dedis.ch/kyber/v3/sign/bls"
+	eddsa "go.dedis.ch/kyber/v3/sign/eddsa"
+	tbls "go.dedis.ch/kyber/v3/sign/tbls"
+	random "go.dedis.ch/kyber/v3/util/random"
 )
 
 func bls_test1() {
