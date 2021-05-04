@@ -1,25 +1,21 @@
 package main
 
 import (
-	"crypto/cipher"
 	"fmt"
 
 	kyber "go.dedis.ch/kyber/v3"
-	kyber12381 "go.dedis.ch/kyber/v3/pairing/bls12381"
-	//bn256 "go.dedis.ch/kyber/v3/pairing/bn256"
 	share "go.dedis.ch/kyber/v3/share"
 	bls "go.dedis.ch/kyber/v3/sign/bls"
 	tbls "go.dedis.ch/kyber/v3/sign/tbls"
 	random "go.dedis.ch/kyber/v3/util/random"
 
-	kilic12381 "github.com/kilic/bls12-381"
-
 	geth12381 "github.com/ethereum/go-ethereum/crypto/bls12381"
+	kilic12381 "github.com/kilic/bls12-381"
+	kyber12381 "go.dedis.ch/kyber/v3/pairing/bls12381"
 )
 
 func bls_test1() {
 	msg := []byte("Hello World")
-	//suite := bn256.NewSuite()
 	suite := kyber12381.NewSuite()
 	// This is a T out of N threshold BLS
 	n := 3
@@ -147,8 +143,9 @@ func bls_test1() {
 
 func bls_test2() {
 	msg := []byte("Hello Boneh-Lynn-Shacham")
-	//suite := bn256.NewSuite()
 	suite := kyber12381.NewSuite()
+	e := geth12381.NewPairingEngine()
+	gg1, gg2 := e.G1, e.G2
 	private, public := bls.NewKeyPair(suite, random.New())
 	sig, _ := bls.Sign(suite, private, msg)
 	err := bls.Verify(suite, public, msg, sig)
@@ -187,19 +184,31 @@ func bls_test2() {
 	s_pub := g2.ToUncompressed(recoveredPub)
 	fmt.Printf("s_pub(%d): %x\n", len(s_pub), s_pub)
 	b2 := make([]byte, 256)
-	copy(b2[16:64], s_pub[:48])
-	copy(b2[80:128], s_pub[48:96])
-	copy(b2[144:192], s_pub[96:144])
-	copy(b2[208:256], s_pub[144:192])
+	copy(b2[16:64], s_pub[48:96])
+	copy(b2[80:128], s_pub[:48])
+	copy(b2[144:192], s_pub[144:192])
+	copy(b2[208:256], s_pub[96:144])
 	fmt.Println()
 
 	g2Base := g2.One()
 	fmt.Printf("g2(%d) base: %x\n", len(g2.ToUncompressed(g2Base)), g2.ToUncompressed(g2Base))
+	g2s := make([]byte, 256)
+	copy(g2s[16:64], g2.ToUncompressed(g2Base)[48:96])
+	copy(g2s[80:128], g2.ToUncompressed(g2Base)[:48])
+	copy(g2s[144:192], g2.ToUncompressed(g2Base)[144:192])
+	copy(g2s[208:256], g2.ToUncompressed(g2Base)[96:144])
+	g2base, err := gg2.DecodePoint(g2s)
+	fmt.Printf("geth g2base: %v\n", g2base)
 	fmt.Println()
 
 	var Domain = []byte("BLS_SIG_BLS12381G2_XMD:SHA-256_SSWU_RO_NUL_")
 	HM, _ := kilic12381.NewG1().HashToCurve(msg, Domain)
 	fmt.Printf("HM(%d): %x\n", len(g1.ToUncompressed(HM)), g1.ToUncompressed(HM))
+	hms := make([]byte, 128)
+	copy(hms[16:], g1.ToUncompressed(HM)[:48])
+	copy(hms[80:], g1.ToUncompressed(HM)[48:])
+	hm, err := gg1.DecodePoint(hms)
+	fmt.Printf("geth hm: %v\n", hm)
 	fmt.Println()
 
 	b3 := make([]byte, 384)
@@ -207,9 +216,6 @@ func bls_test2() {
 	copy(b3[128:], b2[:])
 	fmt.Printf("b3(%d): %x\n", len(b3), b3)
 	fmt.Println()
-
-	e := geth12381.NewPairingEngine()
-	gg1, gg2 := e.G1, e.G2
 
 	pp2, err := gg2.FromBytes(s_pub)
 	if err != nil {
@@ -222,9 +228,25 @@ func bls_test2() {
 	t0, t1, t2 := 0, 128, 384
 	p1, err := gg1.DecodePoint(b3[t0:t1])
 	fmt.Printf("err 1: %v, %x\n", err, b3[t0:t1])
-
-	_, err = gg2.DecodePoint(b3[t1:t2])
+	p2, err := gg2.DecodePoint(b3[t1:t2])
 	fmt.Printf("err 2: %v, %x\n", err, b3[t1:t2])
+	fmt.Println()
+
+	p1neg := gg1.One()
+	gg1.Neg(p1neg, p1)
+	fmt.Printf("p1: %x\n", gg1.EncodePoint(p1))
+	fmt.Printf("p1 neg: %x\n", gg1.EncodePoint(p1neg))
+	fmt.Println()
+
+	/*
+		fmt.Printf("b2: %x\n", b2)
+		fmt.Printf("s_pub: %x\n", s_pub)
+		_, err_b2 := gg2.DecodePoint(b2)
+		_, err_s_pub := gg2.FromBytes(s_pub)
+		gg2.ToBytes(pp2)
+		fmt.Printf("err b2: %v, err s pub: %v\n", err_b2, err_s_pub)
+		fmt.Println()
+	*/
 
 	if !gg1.InCorrectSubgroup(p1) {
 		fmt.Printf("error p1\n")
@@ -232,9 +254,31 @@ func bls_test2() {
 	if !gg2.InCorrectSubgroup(pp2) {
 		fmt.Printf("error p2\n")
 	}
-	e.AddPair(p1, pp2)
+
+	//r1 := e.AddPair(hm, p2).Result()
+	//r2 := e.AddPair(p1, g2base).Result()
+	//fmt.Printf("r1: %v\n", r1)
+	//fmt.Printf("r2: %v\n", r2)
+	//fmt.Printf("r1 == r2: %t\n", r1.Equal(r2))
+	e.AddPair(hm, p2)
+	e.AddPairInv(p1, g2base)
 	result := e.Check()
-	fmt.Printf("e.check: %t\n", result)
+	fmt.Printf("e.check 1: %t\n", result)
+
+	e.Reset()
+	e.AddPair(hm, p2)
+	e.AddPair(p1neg, g2base)
+	result = e.Check()
+	fmt.Printf("e.check neg: %t\n", result)
+	fmt.Println()
+
+	fmt.Println("---------BLS Verify Input-----------")
+	fmt.Printf("g1(%d): %x\n", len(gg1.EncodePoint(hm)), gg1.EncodePoint(hm))
+	fmt.Printf("g2(%d): %x\n", len(gg2.EncodePoint(p2)), gg2.EncodePoint(p2))
+	fmt.Println("-------------------------")
+	fmt.Printf("g1(%d): %x\n", len(gg1.EncodePoint(p1neg)), gg1.EncodePoint(p1neg))
+	fmt.Printf("g2(%d): %x\n", len(gg2.EncodePoint(g2base)), gg2.EncodePoint(g2base))
+	fmt.Println()
 
 	err = bls.Verify(suite, aggregatedKey, msg, aggregatedSig)
 	if err != nil {
@@ -243,18 +287,6 @@ func bls_test2() {
 		fmt.Printf("aggregated verified bls sig\n")
 	}
 
-}
-
-type constantStream struct {
-	seed []byte
-}
-
-func ConstantStream(buff []byte) cipher.Stream {
-	return &constantStream{buff}
-}
-
-func (cs *constantStream) XORKeyStream(dst, src []byte) {
-	copy(dst, cs.seed)
 }
 
 func main() {
